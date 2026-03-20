@@ -6,7 +6,8 @@ Shows full chain-of-thought: thinking steps, tool calls, tool results, final ans
 import os
 import json
 import chainlit as cl
-from agent.agent import Text2SQLAgent
+from agent.agent import Text2SQLAgent, MODEL
+from agent.tracker import UsageTracker
 
 TOOL_ICONS = {
     "list_tables":            "📋",
@@ -127,13 +128,17 @@ def format_tool_result(tool_name: str, result: str, args: dict | None = None) ->
 
 @cl.on_chat_start
 async def on_start():
+    # Create a fresh tracker for this session
+    cl.user_session.set("tracker", UsageTracker(model=MODEL))
+
     await cl.Message(
         content=(
             "## Text2SQL Agent\n\n"
             "Ask a question about the Card Payments database and I will generate "
             "the SQL, execute it, and explain the results.\n\n"
             "**Available data:** transactions, merchants, cards, authorizations, "
-            "chargebacks, clearing, disputes, issuers."
+            "chargebacks, clearing, disputes, issuers.\n\n"
+            "Type `/cost` at any time to see your session token usage and cost summary."
         )
     ).send()
 
@@ -141,12 +146,22 @@ async def on_start():
 @cl.on_message
 async def on_message(message: cl.Message):
 
+    # Handle /cost command
+    if message.content.strip().lower() in ("/cost", "/usage"):
+        tracker: UsageTracker = cl.user_session.get("tracker")
+        await cl.Message(
+            content=f"## Session Token Usage & Cost\n\n{tracker.format_session_summary()}",
+            author="Usage Tracker"
+        ).send()
+        return
+
     # Scope guard — reject off-topic questions immediately
     if is_out_of_scope(message.content):
         await cl.Message(content=OUT_OF_SCOPE_REPLY).send()
         return
 
-    agent = Text2SQLAgent()
+    tracker: UsageTracker = cl.user_session.get("tracker")
+    agent = Text2SQLAgent(tracker=tracker)
 
     thinking_msg: cl.Message | None = None
     thinking_buf: list[str] = []
@@ -189,14 +204,37 @@ async def on_message(message: cl.Message):
                 author=f"{TOOL_ICONS.get(tool_name, '🔧')} {tool_name}"
             ).send()
 
+    async def on_turn_usage(turn_usage):
+        # Update the live usage badge in the step sidebar
+        pass  # summary shown after final answer instead
+
     final = await agent.run(
         user_query=message.content,
         on_thinking=on_thinking,
         on_tool_call=on_tool_call,
         on_tool_result=on_tool_result,
+        on_turn_usage=on_turn_usage,
     )
 
+    # Final answer
     await cl.Message(
         content=f"## Answer\n\n{final}",
         author="Text2SQL Agent"
     ).send()
+
+    # Show per-question usage summary after every answer
+    last_q = tracker.history[-1] if tracker.history else None
+    if last_q:
+        await cl.Message(
+            content=(
+                f"### Token Usage — this question\n\n"
+                f"{tracker.format_question_summary(last_q)}\n\n"
+                f"---\n"
+                f"_Session total: **{tracker.session_total_tokens:,} tokens** — "
+                f"**${tracker.session_total_cost:.6f}** across "
+                f"**{tracker.session_questions}** question(s) / "
+                f"**{tracker.session_llm_calls}** LLM call(s). "
+                f"Type `/cost` for full session breakdown._"
+            ),
+            author="Usage Tracker"
+        ).send()

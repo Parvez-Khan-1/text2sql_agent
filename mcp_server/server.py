@@ -509,12 +509,240 @@ def er_diagram() -> str:
     return TABLE_RELATIONSHIPS
 
 
+# ─── FastAPI wrapper with Swagger docs ───────────────────────────────────────
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
+from starlette.routing import Mount
+import uvicorn
+
+def create_app(mcp_port: int = 8001) -> FastAPI:
+    """
+    Wraps the MCP SSE server inside a FastAPI app so we get:
+      /docs      — Swagger UI
+      /redoc     — ReDoc UI
+      /openapi.json — OpenAPI schema
+      /sse       — MCP SSE endpoint (used by the agent)
+      /messages/ — MCP message endpoint
+    """
+
+    # ── Build OpenAPI tool docs from our metadata ─────────────────────────────
+    tool_docs = [
+        {
+            "name": "list_tables",
+            "summary": "List all tables",
+            "description": "Returns all 8 tables in the payments database with description, business domain, primary key and current row count.",
+            "params": [],
+            "returns": "Array of table objects: {table, description, business_domain, primary_key, row_count}",
+        },
+        {
+            "name": "get_table_schema",
+            "summary": "Get table schema",
+            "description": "Returns full schema for a specific table including column names, SQLite types, nullable flag and business-friendly descriptions.",
+            "params": [{"name": "table_name", "type": "string", "required": True, "description": "Name of the table (e.g. 'transactions')"}],
+            "returns": "Object: {table, description, business_domain, primary_key, columns[]}",
+        },
+        {
+            "name": "get_table_metadata",
+            "summary": "Get table business metadata",
+            "description": "Returns rich business context for a table including column meanings, domain description and FK relationship hints.",
+            "params": [{"name": "table_name", "type": "string", "required": True, "description": "Name of the table"}],
+            "returns": "Object with full metadata including relationship_hint",
+        },
+        {
+            "name": "get_sample_data",
+            "summary": "Get sample rows",
+            "description": "Returns up to N sample rows from a table so the agent can understand actual data formats and values before writing SQL.",
+            "params": [
+                {"name": "table_name", "type": "string", "required": True, "description": "Name of the table"},
+                {"name": "n", "type": "integer", "required": False, "description": "Number of rows to return (default 5, max 20)"},
+            ],
+            "returns": "Object: {table, sample_rows[]}",
+        },
+        {
+            "name": "get_table_relationships",
+            "summary": "Get full ERD / join map",
+            "description": "Returns the complete entity relationship diagram as text — all FK relationships between the 8 tables and suggested join paths.",
+            "params": [],
+            "returns": "Plain text ERD showing all 1:N relationships and typical join paths",
+        },
+        {
+            "name": "validate_sql",
+            "summary": "Validate SQL syntax",
+            "description": "Runs SQLite EXPLAIN on the query to check syntax without executing it. Safe to call on any SQL before execution.",
+            "params": [{"name": "sql", "type": "string", "required": True, "description": "The SQL query to validate"}],
+            "returns": "Object: {valid: bool, message | error}",
+        },
+        {
+            "name": "execute_sql",
+            "summary": "Execute a SQL SELECT query",
+            "description": "Executes a SELECT/WITH query against the payments SQLite database and returns rows + column names. Only read queries are permitted. Returns up to 500 rows.",
+            "params": [{"name": "sql", "type": "string", "required": True, "description": "A valid SELECT or WITH SQL query"}],
+            "returns": "Object: {success, row_count, columns[], rows[]}",
+        },
+        {
+            "name": "get_column_stats",
+            "summary": "Get column statistics",
+            "description": "For numeric columns: returns min, max, avg, sum, null count. For text columns: returns top-20 distinct values with counts. Useful for understanding data distributions before filtering.",
+            "params": [
+                {"name": "table_name", "type": "string", "required": True, "description": "Name of the table"},
+                {"name": "column_name", "type": "string", "required": True, "description": "Name of the column to analyse"},
+            ],
+            "returns": "Object with stats (numeric) or top_values[] (text)",
+        },
+    ]
+
+    resource_docs = [
+        {"uri": "payments://glossary",      "summary": "Domain glossary",    "description": "Definitions of card payments terminology: authorization, chargeback, interchange, 3DS, etc."},
+        {"uri": "payments://business_rules", "summary": "Business rules",     "description": "Thresholds and SLAs: chargeback rate limits, risk score cutoffs, settlement windows, dispute SLAs."},
+        {"uri": "payments://er_diagram",     "summary": "ER diagram",         "description": "Full entity relationship diagram showing FK relationships between all 8 tables."},
+    ]
+
+    # ── Build OpenAPI paths for each tool ─────────────────────────────────────
+    paths = {}
+
+    for tool in tool_docs:
+        props = {}
+        required = []
+        for p in tool["params"]:
+            props[p["name"]] = {"type": p["type"], "description": p["description"]}
+            if p.get("required"):
+                required.append(p["name"])
+
+        request_body = None
+        if props:
+            request_body = {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object",
+                            "properties": props,
+                            "required": required,
+                        }
+                    }
+                },
+            }
+
+        paths[f"/tools/{tool['name']}"] = {
+            "post": {
+                "tags": ["MCP Tools"],
+                "summary": tool["summary"],
+                "description": f"{tool['description']}\n\n**Returns:** {tool['returns']}",
+                "operationId": tool["name"],
+                **({"requestBody": request_body} if request_body else {}),
+                "responses": {
+                    "200": {
+                        "description": tool["returns"],
+                        "content": {"application/json": {"schema": {"type": "object"}}},
+                    }
+                },
+            }
+        }
+
+    for res in resource_docs:
+        safe_id = res["uri"].replace("://", "_").replace("/", "_")
+        paths[f"/resources/{safe_id}"] = {
+            "get": {
+                "tags": ["MCP Resources"],
+                "summary": res["summary"],
+                "description": res["description"],
+                "operationId": f"resource_{safe_id}",
+                "responses": {
+                    "200": {
+                        "description": "Plain text content",
+                        "content": {"text/plain": {"schema": {"type": "string"}}},
+                    }
+                },
+            }
+        }
+
+    # ── Build the custom OpenAPI schema ───────────────────────────────────────
+    custom_openapi = {
+        "openapi": "3.1.0",
+        "info": {
+            "title": "Card Payments MCP Server",
+            "version": "1.0.0",
+            "description": (
+                "## Card Payments MCP Server\n\n"
+                "MCP (Model Context Protocol) server exposing tools and resources "
+                "for querying a Card Payments SQLite database.\n\n"
+                "### Database Tables\n"
+                "| Table | Domain | Description |\n"
+                "|-------|--------|-------------|\n"
+                "| `issuers` | Card Issuing | Banks that issue payment cards |\n"
+                "| `merchants` | Merchant Mgmt | Businesses accepting card payments |\n"
+                "| `cards` | Card Lifecycle | Payment cards issued to customers |\n"
+                "| `authorizations` | Auth & Fraud | Real-time auth requests |\n"
+                "| `transactions` | Transaction Processing | Settled payment records |\n"
+                "| `clearing` | Clearing & Settlement | Batch reconciliation records |\n"
+                "| `chargebacks` | Dispute & Chargeback | Disputed transactions |\n"
+                "| `dispute_cases` | Customer Disputes | Customer service cases |\n\n"
+                "### MCP Endpoints\n"
+                "- **SSE connection:** `GET /sse`\n"
+                "- **Message endpoint:** `POST /messages/?session_id=...`\n\n"
+                "> **Note:** The `/tools/*` and `/resources/*` paths below are "
+                "documentation-only. Actual tool calls go through the SSE protocol."
+            ),
+        },
+        "tags": [
+            {"name": "MCP Tools",     "description": "Tools the agent can call to explore schema and execute SQL"},
+            {"name": "MCP Resources", "description": "Static reference resources: glossary, business rules, ERD"},
+            {"name": "MCP Protocol",  "description": "Raw MCP SSE transport endpoints"},
+        ],
+        "paths": {
+            "/sse": {
+                "get": {
+                    "tags": ["MCP Protocol"],
+                    "summary": "MCP SSE connection endpoint",
+                    "description": "Establishes a Server-Sent Events connection for MCP communication. This is the endpoint the agent connects to.",
+                    "operationId": "mcp_sse_connect",
+                    "responses": {"200": {"description": "SSE stream established"}},
+                }
+            },
+            "/messages/": {
+                "post": {
+                    "tags": ["MCP Protocol"],
+                    "summary": "MCP message endpoint",
+                    "description": "Receives MCP JSON-RPC messages from the client (agent). Requires an active session_id from the SSE connection.",
+                    "operationId": "mcp_post_message",
+                    "parameters": [{"name": "session_id", "in": "query", "required": True, "schema": {"type": "string"}}],
+                    "responses": {"202": {"description": "Message accepted"}},
+                }
+            },
+            **paths,
+        },
+    }
+
+    # ── Create FastAPI app with custom OpenAPI ────────────────────────────────
+    app = FastAPI(
+        title="Card Payments MCP Server",
+        docs_url="/docs",
+        redoc_url="/redoc",
+    )
+
+    # Override the OpenAPI schema with our custom one
+    def custom_openapi_fn():
+        return custom_openapi
+
+    app.openapi = custom_openapi_fn
+
+    # ── Mount the MCP SSE Starlette app ───────────────────────────────────────
+    mcp.settings.host = "0.0.0.0"
+    mcp.settings.port = mcp_port
+    starlette_mcp_app = mcp.sse_app()
+    app.mount("/", starlette_mcp_app)
+
+    return app
+
+
 # ─── Entry point ─────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8001
-    mcp.settings.host = "0.0.0.0"
-    mcp.settings.port = port
     print(f"[MCP] CardPayments MCP Server starting on http://0.0.0.0:{port}")
-    mcp.run(transport="sse")
+    print(f"[MCP] Swagger UI  -> http://localhost:{port}/docs")
+    print(f"[MCP] ReDoc       -> http://localhost:{port}/redoc")
+    print(f"[MCP] SSE endpoint-> http://localhost:{port}/sse")
+    app = create_app(mcp_port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

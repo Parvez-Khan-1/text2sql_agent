@@ -13,6 +13,7 @@ from pathlib import Path
 from openai import AsyncOpenAI
 from mcp import ClientSession
 from mcp.client.sse import sse_client
+from agent.tracker import UsageTracker
 
 # ── Load .env file if present (Windows-friendly alternative to export) ────────
 _env_path = Path(__file__).resolve().parent.parent / ".env"
@@ -82,9 +83,10 @@ Think step-by-step, reason out loud, and be thorough.
 
 
 class Text2SQLAgent:
-    def __init__(self):
+    def __init__(self, tracker: UsageTracker | None = None):
         self.client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.mcp_tools: list[dict] = []
+        self.tracker = tracker
 
     async def _load_mcp_tools(self, session: ClientSession):
         """Convert MCP tools to OpenAI function-call format."""
@@ -118,11 +120,15 @@ class Text2SQLAgent:
         on_thinking: Callable[[str], Any] | None = None,
         on_tool_call: Callable[[str, dict], Any] | None = None,
         on_tool_result: Callable[[str, str], Any] | None = None,
+        on_turn_usage: Callable[[Any], Any] | None = None,
     ) -> str:
         """
         Run the full agentic loop for a user query.
         Callbacks let Chainlit stream each step live.
         """
+        if self.tracker:
+            self.tracker.start_question(user_query)
+
         async with sse_client(MCP_SERVER_URL) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
@@ -150,6 +156,19 @@ class Text2SQLAgent:
                     msg = response.choices[0].message
                     finish = response.choices[0].finish_reason
 
+                    # ── Record token usage for this turn ─────────────────────
+                    tool_names_this_turn = [
+                        tc.function.name for tc in (msg.tool_calls or [])
+                    ]
+                    if self.tracker and response.usage:
+                        turn_usage = self.tracker.record_turn(
+                            prompt_tokens     = response.usage.prompt_tokens,
+                            completion_tokens = response.usage.completion_tokens,
+                            tool_calls        = tool_names_this_turn,
+                        )
+                        if on_turn_usage:
+                            await on_turn_usage(turn_usage)
+
                     # Stream any text thinking
                     if msg.content:
                         if on_thinking:
@@ -157,6 +176,8 @@ class Text2SQLAgent:
 
                     # If no tool calls → final answer
                     if finish == "stop" or not msg.tool_calls:
+                        if self.tracker:
+                            self.tracker.end_question()
                         return msg.content or "Done."
 
                     # Append assistant message with tool calls
@@ -198,4 +219,6 @@ class Text2SQLAgent:
                             "content": result,
                         })
 
+                if self.tracker:
+                    self.tracker.end_question()
                 return "Agent reached max iterations without a final answer."
