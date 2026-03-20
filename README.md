@@ -226,8 +226,6 @@ The LLM does not call the MCP tools directly. Instead:
 
 Every round trip back to the LLM (*"here's the tool result, what should I do now?"*) counts as one LLM call. The LLM has no memory between calls, so the full conversation history must be sent each time.
 
-![App Screenshot](static/img.png)
-
 ```mermaid
 sequenceDiagram
     actor User
