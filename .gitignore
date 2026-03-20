@@ -209,3 +209,4 @@ __marimo__/
 .chainlit
 .files
 .idea
+venv
