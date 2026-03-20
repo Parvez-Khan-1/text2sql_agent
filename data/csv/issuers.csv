@@ -1,0 +1,11 @@
+issuer_id,issuer_name,country_code,bank_code,swift_code,currency,is_active,onboarded_date,contact_email,risk_tier
+ISS001,Chase Bank,CA,BNK2824,SWIFT0001,USD,True,2019-01-16 10:13:48,ops@chasebank.com,LOW
+ISS002,Bank of America,UK,BNK2679,SWIFT0002,CAD,True,2020-07-06 07:09:23,ops@bankofamerica.com,MEDIUM
+ISS003,Wells Fargo,US,BNK1488,SWIFT0003,USD,True,2018-12-28 10:13:36,ops@wellsfargo.com,HIGH
+ISS004,Citibank,AU,BNK1434,SWIFT0004,CAD,True,2021-01-17 07:08:45,ops@citibank.com,HIGH
+ISS005,US Bank,CA,BNK9928,SWIFT0005,AUD,True,2019-11-29 19:43:37,ops@usbank.com,HIGH
+ISS006,Capital One,DE,BNK1106,SWIFT0006,EUR,False,2019-06-13 13:27:31,ops@capitalone.com,MEDIUM
+ISS007,HSBC,UK,BNK4527,SWIFT0007,GBP,True,2018-05-25 01:48:56,ops@hsbc.com,MEDIUM
+ISS008,Barclays,US,BNK6881,SWIFT0008,GBP,True,2021-06-07 19:55:23,ops@barclays.com,LOW
+ISS009,Deutsche Bank,CA,BNK8527,SWIFT0009,CAD,True,2021-12-03 17:39:49,ops@deutschebank.com,MEDIUM
+ISS010,BNP Paribas,US,BNK5803,SWIFT0010,CAD,True,2020-06-15 21:14:53,ops@bnpparibas.com,LOW

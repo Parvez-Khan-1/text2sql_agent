@@ -1,0 +1,3 @@
+Give me the total count of unique issuers ?
+How many transations were declined because of  invalid cvv ?
+Which merchants have a chargeback rate above 1% ?

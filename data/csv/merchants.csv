@@ -1,0 +1,21 @@
+merchant_id,merchant_name,mcc_code,category,country_code,city,is_high_risk,onboarded_date,monthly_volume_usd,chargeback_rate,acquiring_bank,terminal_count
+MER0001,Amazon,5969,Utilities,US,New York,False,2022-04-15 22:04:36,1454045.94,0.0049,Citi,444
+MER0002,Walmart,5411,Retail,FR,Berlin,True,2021-09-14 12:02:01,4172211.03,0.009,Wells Fargo,108
+MER0003,Target,5411,Utilities,DE,Chicago,False,2021-08-04 06:02:59,3178541.66,0.0272,Citi,84
+MER0004,Best Buy,5734,Entertainment,FR,Berlin,False,2021-11-29 12:16:09,1628170.84,0.0386,Chase,118
+MER0005,Costco,5300,Retail,DE,Paris,False,2019-04-13 19:41:24,1062804.39,0.0472,Wells Fargo,109
+MER0006,Home Depot,5251,Utilities,FR,Paris,True,2019-08-10 22:38:20,1331752.03,0.0131,Wells Fargo,383
+MER0007,Starbucks,5812,Transport,FR,Sydney,True,2020-07-16 08:12:20,1104410.59,0.0499,US Bank,47
+MER0008,McDonald's,5814,Retail,US,London,False,2022-05-15 10:51:32,3405601.26,0.0302,US Bank,196
+MER0009,Shell,5541,Transport,FR,Sydney,False,2021-05-09 09:45:22,4305290.71,0.0016,Chase,350
+MER0010,Delta Airlines,4511,Transport,DE,LA,False,2019-06-23 06:57:59,1474565.64,0.0087,Chase,489
+MER0011,Uber,4121,Utilities,DE,Sydney,False,2021-02-27 15:44:40,4564012.92,0.0437,Wells Fargo,431
+MER0012,Netflix,7841,Utilities,AU,Sydney,False,2019-08-26 10:15:39,1875830.12,0.0089,Chase,307
+MER0013,Apple Store,5734,Travel,FR,New York,False,2022-12-14 07:18:25,1821274.03,0.0493,Wells Fargo,123
+MER0014,Nike,5661,Retail,UK,Sydney,False,2019-05-14 01:23:31,3662218.9,0.041,Citi,66
+MER0015,Zara,5621,Utilities,FR,Sydney,False,2020-02-16 18:01:38,2643092.2,0.0307,Citi,476
+MER0016,Marriott,7011,Transport,UK,Chicago,False,2020-09-11 19:30:39,4975795.29,0.0328,US Bank,461
+MER0017,Hilton,7011,Transport,FR,New York,False,2019-12-16 01:19:26,329489.22,0.002,Citi,302
+MER0018,Lyft,4121,Food & Beverage,US,New York,False,2019-12-22 15:34:06,346327.64,0.0025,Wells Fargo,37
+MER0019,DoorDash,5812,Transport,UK,Berlin,True,2019-11-29 19:19:37,2700777.32,0.0364,US Bank,125
+MER0020,Spotify,7841,Entertainment,FR,London,False,2019-05-31 13:50:33,3298323.92,0.0184,US Bank,240
